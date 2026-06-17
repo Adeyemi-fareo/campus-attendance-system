@@ -49,10 +49,27 @@ const Dashboard = ({ user, onLogout }) => {
   }, [user.role, user.staff_id]);
 
   // --- LECTURER OPERATIONS ---
-  const handleGenerateQR = (e) => {
+  const handleGenerateQR = async (e) => {
     e.preventDefault();
     const startTime = new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
     
+    let liveClassId = null;
+    try {
+      // Log the start of the class session tracking row instantly on database
+      const logResponse = await fetch(`${apiUrl}/api/classes/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lecturer_id: user.staff_id,
+          course_code: selectedCourse,
+          level: selectedLevel,
+          hall_name: selectedHall
+        })
+      });
+      const logData = await logResponse.json();
+      if (logResponse.ok) liveClassId = logData.classId;
+    } catch (err) { console.error("Session timeline logging skipped."); }
+
     const qrPayload = JSON.stringify({
       level: selectedLevel,
       course: selectedCourse,
@@ -62,9 +79,8 @@ const Dashboard = ({ user, onLogout }) => {
       timestamp: new Date().getTime() 
     });
     
-    // Lock session into state storage across window changes
     localStorage.setItem(`nacos_session_${user.staff_id}`, JSON.stringify({
-      qrPayload, level: selectedLevel, course: selectedCourse, hall: selectedHall, startedAt: startTime
+      qrPayload, level: selectedLevel, course: selectedCourse, hall: selectedHall, startedAt: startTime, classId: liveClassId
     }));
     
     setActiveQR(qrPayload);
@@ -75,6 +91,17 @@ const Dashboard = ({ user, onLogout }) => {
     let finalCount = 0;
     const sessionData = JSON.parse(localStorage.getItem(`nacos_session_${user.staff_id}`)) || {};
     const endTime = new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
+
+    // Terminate persistent log row trace on backend data arrays
+    if (sessionData.classId) {
+      try {
+        await fetch(`${apiUrl}/api/classes/end`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classId: sessionData.classId })
+        });
+      } catch (err) { console.error("Session closing bounds update dropped."); }
+    }
 
     try {
       const response = await fetch(`${apiUrl}/api/attendance/count?course=${selectedCourse}`);

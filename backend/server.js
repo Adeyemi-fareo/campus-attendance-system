@@ -216,29 +216,74 @@ app.post('/api/attendance/export', (req, res) => {
     });
 });
 
-// LECTURER HISTORY ROUTE
+// ==========================================
+//     PERSISTENT CLASS LOGGING ROUTES
+// ==========================================
+
+// 1. START A CLASS LAYER
+app.post('/api/classes/start', (req, res) => {
+    const { lecturer_id, course_code, level, hall_name } = req.body;
+    const query = `INSERT INTO classes (lecturer_id, course_code, level, hall_name) VALUES (?, ?, ?, ?)`;
+    
+    db.query(query, [lecturer_id, course_code, level, hall_name], (err, result) => {
+        if (err) return res.status(500).json({ message: "Failed to initialize persistent class log entry." });
+        res.status(201).json({ message: "Class session logged successfully.", classId: result.insertId });
+    });
+});
+
+// 2. END A CLASS LAYER
+app.post('/api/classes/end', (req, res) => {
+    const { classId } = req.body;
+    const query = `UPDATE classes SET end_time = CURRENT_TIMESTAMP WHERE id = ?`;
+    
+    db.query(query, [classId], (err) => {
+        if (err) return res.status(500).json({ message: "Failed to terminate persistent class log timeline." });
+        res.status(200).json({ message: "Class session closed accurately." });
+    });
+});
+
+// 3. UPGRADED LECTURER HISTORY ROUTE (Reads from classes, drops in attendance counts)
 app.get('/api/lecturer/history', (req, res) => {
     const { staff_id } = req.query;
-    
     const query = `
         SELECT 
-            course_code, 
-            level, 
-            hall_name, 
-            DATE_FORMAT(scan_time, '%Y-%m-%d') as class_date, 
-            COUNT(matric_no) as total_students
-        FROM attendance_records
-        WHERE lecturer_id = ?
-        GROUP BY course_code, level, hall_name, DATE_FORMAT(scan_time, '%Y-%m-%d')
-        ORDER BY class_date DESC
+            c.course_code, 
+            c.level, 
+            c.hall_name, 
+            DATE_FORMAT(c.start_time, '%Y-%m-%d') as class_date,
+            DATE_FORMAT(c.start_time, '%H:%i') as started_at,
+            IFNULL(DATE_FORMAT(c.end_time, '%H:%i'), 'Active') as ended_at,
+            COUNT(a.id) as total_students
+        FROM classes c
+        LEFT JOIN attendance_records a ON c.course_code = a.course_code 
+            AND DATE(c.start_time) = DATE(a.scan_time)
+        WHERE c.lecturer_id = ?
+        GROUP BY c.id
+        ORDER BY c.start_time DESC
     `;
 
     db.query(query, [staff_id], (err, results) => {
         if (err) {
             console.error("History Fetch Error:", err);
-            return res.status(500).json({ error: "Database error" });
+            return res.status(500).json({ error: "Database mapping error." });
         }
         res.status(200).json(results);
+    });
+});
+
+
+// ==========================================
+//         ACCOUNT RECOVERY ROUTE
+// ==========================================
+
+app.post('/api/recovery/forgot-id', (sqlReq, sqlRes) => {
+    const { full_name } = sqlReq.body;
+    // Standard validation search mechanism mapping against upper string bounds
+    db.query(`SELECT staff_id FROM lecturers WHERE UPPER(full_name) = ?`, [full_name.toUpperCase().trim()], (err, results) => {
+        if (err) return sqlRes.status(500).json({ message: "Database validation lookup anomaly." });
+        if (results.length === 0) return sqlRes.status(404).json({ message: "Lecturer profile identity not found inside database registries." });
+        
+        sqlRes.status(200).json({ staff_id: results[0].staff_id });
     });
 });
 
