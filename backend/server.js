@@ -1,36 +1,225 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const mysql = require('mysql2');
+const bcrypt = require('bcrypt');
+const xlsx = require('xlsx');
+const nodemailer = require('nodemailer');
 
-// Initialize the Express app
 const app = express();
-const db = require('./db'); // Imports your database connection
 
-// Middleware
-app.use(cors()); 
-app.use(express.json()); 
+// --- MIDDLEWARE ---
+app.use(cors());
+app.use(express.json());
 
-// A simple test route
-// The API endpoint that receives the attendance scan
-app.post('/api/attendance', async (req, res) => {
-    const { matric_no, qr_token, lat, lng } = req.body;
+// --- DATABASE CONNECTION ---
+const db = mysql.createConnection({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD, 
+    database: process.env.DB_NAME
+});
+
+db.connect((err) => {
+    if (err) console.error("Database connection failed:", err);
+    else console.log("Connected to MySQL database.");
+});
+
+// ==========================================
+//        AUTHENTICATION ROUTES
+// ==========================================
+
+app.post('/api/register', async (req, res) => {
+    const { matric_no, full_name, password } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.query(`INSERT INTO students (matric_no, full_name, password, proxy_pin) VALUES (?, ?, ?, ?)`, 
+        [matric_no, full_name, hashedPassword, password], (err) => {
+            if (err) return res.status(400).json({ message: "Registration failed." });
+            res.status(201).json({ message: "Registration successful!" });
+        });
+    } catch (error) { res.status(500).json({ message: "Server error." }); }
+});
+
+app.post('/api/login', (req, res) => {
+    const { matric_no, password } = req.body;
+    db.query(`SELECT * FROM students WHERE matric_no = ?`, [matric_no], async (err, results) => {
+        if (results.length === 0) return res.status(404).json({ message: "Student not found." });
+        const match = await bcrypt.compare(password, results[0].password);
+        if (match) res.status(200).json({ studentData: { matric_no: results[0].matric_no, full_name: results[0].full_name } });
+        else res.status(401).json({ message: "Incorrect PIN." });
+    });
+});
+
+app.post('/api/lecturer/login', (req, res) => {
+    const { staff_id, password } = req.body;
+    db.query(`SELECT * FROM lecturers WHERE staff_id = ?`, [staff_id], async (err, results) => {
+        if (results.length === 0) return res.status(404).json({ message: "Lecturer not found." });
+        const match = await bcrypt.compare(password, results[0].password);
+        if (match) res.status(200).json({ lecturerData: { staff_id: results[0].staff_id, full_name: results[0].full_name } });
+        else res.status(401).json({ message: "Incorrect PIN." });
+    });
+});
+
+app.post('/api/lecturer/register', async (req, res) => {
+    const { staff_id, full_name, password, access_code } = req.body;
+
+    // --- THE DEPARTMENT BOUNCER ---
+    const SECRET_PASSCODE = "NACOS-STAFF-2026";
+    if (access_code !== SECRET_PASSCODE) {
+        return res.status(403).json({ message: "Registration Blocked: Invalid Department Access Code." });
+    }
+
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.query(`INSERT INTO lecturers (staff_id, full_name, password) VALUES (?, ?, ?)`, 
+        [staff_id, full_name, hashedPassword], (err) => {
+            if (err) {
+                if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ message: "This Staff ID is already registered." });
+                return res.status(500).json({ message: "Database error during registration." });
+            }
+            res.status(201).json({ message: "Registration successful!" });
+        });
+    } catch (error) { 
+        res.status(500).json({ message: "Server error during registration." }); 
+    }
+});
+
+// ==========================================
+//          CORE ATTENDANCE ROUTES
+// ==========================================
+
+function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; 
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))); 
+}
+
+const HALL_LOCATIONS = {
+    'Coited Room 1': { lat: 6.499406, lng: 3.114119 },
+    'Coited Annex Building': { lat: 6.499334, lng: 3.113444 },
+    'Credo Hall': { lat: 6.501398, lng: 3.114351 },
+    'ETF Building': { lat: 6.499506, lng: 3.113009 },
+    'Computer Lab 1': { lat: 6.499334, lng: 3.113444 }, 
+    'Computer Lab 2': { lat: 6.499334, lng: 3.113444 }  
+};
+
+app.post('/api/attendance', (req, res) => {
+    const { matric_no, course, level, hall, lecturer_id, lat, lng } = req.body;
+    const targetLocation = HALL_LOCATIONS[hall];
+
+    if (!targetLocation) return res.status(400).json({ message: "Invalid hall location." });
     
-    // Log the data to the terminal so we can see it arrive!
-    console.log(`\n--- New Attendance Scan ---`);
-    console.log(`Student: ${matric_no}`);
-    console.log(`Token: ${qr_token}`);
-    console.log(`Coordinates: ${lat}, ${lng}`);
-    console.log(`---------------------------\n`);
+    const distance = getDistanceInMeters(targetLocation.lat, targetLocation.lng, lat, lng);
+    
+    // --- PRODUCTION MODE: 50 Meter Radius ---
+    if (distance > 50) {
+        return res.status(403).json({ 
+            message: `Location verification failed. You are ${Math.round(distance)}m away from the hall.` 
+        }); 
+    }
 
-    // For this test, we are just telling the frontend we received it safely.
-    // Next, we will add the Geofencing Math and MySQL insert here!
-    res.json({ message: "Attendance received by backend!" });
+    db.query(`SELECT * FROM attendance_records WHERE matric_no = ? AND course_code = ? AND DATE(scan_time) = CURDATE()`, [matric_no, course], (err, results) => {
+        if (results.length > 0) return res.status(400).json({ message: "Attendance already marked for today!" });
+        
+        db.query(`INSERT INTO attendance_records (matric_no, course_code, level, hall_name, lecturer_id) VALUES (?, ?, ?, ?, ?)`, 
+        [matric_no, course, level, hall, lecturer_id], (err) => {
+            if (err) {
+                console.error("Save Error:", err);
+                return res.status(500).json({ message: "Failed to save record." });
+            }
+            res.status(200).json({ message: `Attendance marked successfully for ${course}!` });
+        });
+    });
 });
 
-// Set the port 
+app.get('/api/attendance/count', (req, res) => {
+    const { course } = req.query;
+    db.query(`SELECT COUNT(*) AS total FROM attendance_records WHERE course_code = ? AND DATE(scan_time) = CURDATE()`, [course], (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        res.status(200).json({ count: results[0].total });
+    });
+});
+
+app.post('/api/attendance/export', (req, res) => {
+    const { course, email } = req.body;
+    const query = `
+        SELECT a.matric_no, s.full_name, a.scan_time, a.level
+        FROM attendance_records a 
+        JOIN students s ON a.matric_no = s.matric_no 
+        WHERE a.course_code = ? AND DATE(a.scan_time) = CURDATE()
+    `;
+
+    db.query(query, [course], async (err, results) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (results.length === 0) return res.status(404).json({ message: "No attendance records found for today." });
+
+        try {
+            const formattedData = results.map(row => ({
+                "Matric Number": row.matric_no,
+                "Student Name": row.full_name,
+                "Level": row.level,
+                "Time of Sign-in": new Date(row.scan_time).toLocaleString('en-NG')
+            }));
+
+            const worksheet = xlsx.utils.json_to_sheet(formattedData);
+            const workbook = xlsx.utils.book_new();
+            xlsx.utils.book_append_sheet(workbook, worksheet, "Attendance");
+            const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: process.env.EMAIL_USER, 
+                    pass: process.env.EMAIL_PASS     
+                }
+            });
+
+            const mailOptions = {
+                from: process.env.EMAIL_USER,
+                to: email,
+                subject: `NACOS Attendance Report: ${course}`,
+                text: `Hello Lecturer,\n\nAttached is the automated Excel attendance record for ${course}.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
+                attachments: [{ filename: `${course}_Attendance.xlsx`, content: excelBuffer }]
+            };
+
+            await transporter.sendMail(mailOptions);
+            res.status(200).json({ message: "Excel report sent successfully!" });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ message: "Failed to generate or send email." });
+        }
+    });
+});
+
+// LECTURER HISTORY ROUTE
+app.get('/api/lecturer/history', (req, res) => {
+    const { staff_id } = req.query;
+    
+    const query = `
+        SELECT 
+            course_code, 
+            level, 
+            hall_name, 
+            DATE_FORMAT(scan_time, '%Y-%m-%d') as class_date, 
+            COUNT(matric_no) as total_students
+        FROM attendance_records
+        WHERE lecturer_id = ?
+        GROUP BY course_code, level, hall_name, DATE_FORMAT(scan_time, '%Y-%m-%d')
+        ORDER BY class_date DESC
+    `;
+
+    db.query(query, [staff_id], (err, results) => {
+        if (err) {
+            console.error("History Fetch Error:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+        res.status(200).json(results);
+    });
+});
+
+// --- START SERVER ---
 const PORT = process.env.PORT || 5000;
-
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server is successfully running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
