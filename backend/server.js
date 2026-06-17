@@ -9,7 +9,11 @@ const nodemailer = require('nodemailer');
 const app = express();
 
 // --- MIDDLEWARE ---
-app.use(cors());
+app.use(cors({
+    origin: ["http://localhost:5173", "https://nacos-attendance-portal.netlify.app"], // Add your exact Netlify link here
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+}));
 app.use(express.json());
 
 // --- DATABASE CONNECTION ---
