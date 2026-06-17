@@ -140,29 +140,27 @@ const Auth = ({ onLogin }) => {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                placeholder={role === 'student' ? "e.g. FAREO ADEYEMI [MIDDLE NAME]" : "e.g. DR. JOHN DOE SMITH"}
+                placeholder={role === 'student' ? "e.g. FAREO ADEYEMI DAVID" : "e.g. DR. JOHN DOE SMITH"}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition"
               />
               <p className="text-xs text-gray-400 mt-1">Must include First, Middle, and Surname.</p>
             </div>
           )}
 
-          {/* REQ 1: Dropdown Level selection for Students */}
-          {role === 'student' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Academic Level</label>
-              <select
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen bg-white outline-none transition"
-              >
-                <option value="100">100 Level</option>
-                <option value="200">200 Level</option>
-                <option value="300">300 Level</option>
-                <option value="400">400 Level</option>
-              </select>
-            </div>
-          )}
+          {/* Dropdown Level selection for Students */}
+{role === 'student' && (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">Academic Level</label>
+    <select
+      value={level}
+      onChange={(e) => setLevel(e.target.value)}
+      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen bg-white outline-none transition"
+    >
+      <option value="100">100 Level</option>
+      <option value="200">200 Level</option>
+    </select>
+  </div>
+)}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

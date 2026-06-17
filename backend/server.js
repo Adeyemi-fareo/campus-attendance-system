@@ -36,12 +36,17 @@ db.connect((err) => {
 // ==========================================
 
 app.post('/api/register', async (req, res) => {
-    const { matric_no, full_name, password } = req.body;
+    // Added level to req.body destructurer
+    const { matric_no, full_name, password, level } = req.body; 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        db.query(`INSERT INTO students (matric_no, full_name, password, proxy_pin) VALUES (?, ?, ?, ?)`, 
-        [matric_no, full_name, hashedPassword, password], (err) => {
-            if (err) return res.status(400).json({ message: "Registration failed." });
+        // Added level variable placement to database insert logic array mapping
+        db.query(`INSERT INTO students (matric_no, full_name, password, proxy_pin, level) VALUES (?, ?, ?, ?, ?)`, 
+        [matric_no, full_name, hashedPassword, password, level || '200'], (err) => {
+            if (err) {
+                console.error("Student Reg DB Error:", err);
+                return res.status(400).json({ message: "Registration failed." });
+            }
             res.status(201).json({ message: "Registration successful!" });
         });
     } catch (error) { res.status(500).json({ message: "Server error." }); }
