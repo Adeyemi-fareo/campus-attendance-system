@@ -155,7 +155,7 @@ const Auth = ({ onLogin }) => {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                placeholder={role === 'student' ? "SURNAME FIRSTNAME MIDDLENAME" : "e.g. DR. JOHN DOE SMITH"}
+                placeholder={role === 'student' ? "FAREO ADEYEMI DAVID" : "e.g. DR. JOHN DOE SMITH"}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition"
               />
               <p className="text-xs text-gray-400 mt-1">Must include all three names strictly.</p>
