@@ -8,10 +8,9 @@ const Auth = ({ onLogin }) => {
   const [identifier, setIdentifier] = useState(''); 
   const [fullName, setFullName] = useState('');
   const [pin, setPin] = useState('');
-  const [level, setLevel] = useState('200'); // REQ 1: Track student levels
+  const [level, setLevel] = useState(''); // Starts empty to force selection
   const [statusMsg, setStatusMsg] = useState(null);
   const [accessCode, setAccessCode] = useState(''); 
-  const [showAccessCode, setShowAccessCode] = useState(false);
 
   // --- THE AUTO-GENERATOR ---
   useEffect(() => {
@@ -24,8 +23,12 @@ const Auth = ({ onLogin }) => {
   }, [fullName, role, isLogin, identifier]);
 
   const handleIdentifierChange = (val) => {
-    // REQ 7: Force Uppercase and Strip ALL spaces instantly
     const sanitized = val.toUpperCase().replace(/\s/g, '');
+    
+    // Strict restriction guard for student matric numbers
+    if (role === 'student' && sanitized.length > 11) {
+      return; // Forcefully block typing beyond 11 characters
+    }
     setIdentifier(sanitized);
   };
 
@@ -33,10 +36,21 @@ const Auth = ({ onLogin }) => {
     e.preventDefault();
     setStatusMsg(null);
 
-    if (!isLogin) {
+    // Strict validation check for student metrics during registration
+    if (!isLogin && role === 'student') {
+      if (!level) {
+        setStatusMsg({ type: 'error', text: "Please select your academic level before registering." });
+        return;
+      }
+      
+      if (identifier.length !== 11) {
+        setStatusMsg({ type: 'error', text: "Invalid Matric Number. It must be exactly 11 digits long." });
+        return;
+      }
+
       const nameWords = fullName.trim().split(/\s+/);
-      if (nameWords.length < 3) {
-        setStatusMsg({ type: 'error', text: "Please enter all three names (First, Middle, Surname)." });
+      if (nameWords.length !== 3) {
+        setStatusMsg({ type: 'error', text: "Registration Denied: You must enter exactly three names (First, Middle, and Surname)." });
         return;
       }
     }
@@ -53,7 +67,7 @@ const Auth = ({ onLogin }) => {
         [role === 'student' ? 'matric_no' : 'staff_id']: identifier, 
         full_name: fullName, 
         password: pin,
-        level: level // Send level to backend registration database
+        level: level 
       };
       if (role === 'lecturer') {
         payload.access_code = accessCode; 
@@ -77,6 +91,7 @@ const Auth = ({ onLogin }) => {
           setFullName('');
           setPin('');
           setAccessCode(''); 
+          setLevel('');
           setStatusMsg({ 
             type: 'success', 
             text: `Registration successful! Please log in below. Your ID is: ${identifier}` 
@@ -109,7 +124,7 @@ const Auth = ({ onLogin }) => {
         <div className="flex justify-center space-x-2 mb-6 bg-gray-100 p-1 rounded-lg">
           <button 
             type="button"
-            onClick={() => { setRole('student'); setIdentifier(''); setStatusMsg(null); }}
+            onClick={() => { setRole('student'); setIdentifier(''); setLevel(''); setStatusMsg(null); }}
             className={`flex-1 py-2 rounded-md text-sm font-semibold transition ${role === 'student' ? 'bg-white shadow text-nacosGreen' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Student
@@ -140,27 +155,29 @@ const Auth = ({ onLogin }) => {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                placeholder={role === 'student' ? "e.g. FAREO ADEYEMI DAVID" : "e.g. DR. JOHN DOE SMITH"}
+                placeholder={role === 'student' ? "SURNAME FIRSTNAME MIDDLENAME" : "e.g. DR. JOHN DOE SMITH"}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition"
               />
-              <p className="text-xs text-gray-400 mt-1">Must include First, Middle, and Surname.</p>
+              <p className="text-xs text-gray-400 mt-1">Must include all three names strictly.</p>
             </div>
           )}
 
-          {/* Dropdown Level selection for Students */}
-{role === 'student' && (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">Academic Level</label>
-    <select
-      value={level}
-      onChange={(e) => setLevel(e.target.value)}
-      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen bg-white outline-none transition"
-    >
-      <option value="100">100 Level</option>
-      <option value="200">200 Level</option>
-    </select>
-  </div>
-)}
+          {/* Dynamic Reset Level Selector Option Choice */}
+          {!isLogin && role === 'student' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Academic Level</label>
+              <select
+                required
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen bg-white outline-none transition"
+              >
+                <option value="" disabled>-- Select Level --</option>
+                <option value="100">100 Level</option>
+                <option value="200">200 Level</option>
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -172,7 +189,7 @@ const Auth = ({ onLogin }) => {
               disabled={!isLogin && role === 'lecturer'} 
               value={identifier}
               onChange={(e) => handleIdentifierChange(e.target.value)}
-              placeholder={role === 'student' ? "Enter your Matric Number" : "e.g. LEC-1234"}
+              placeholder={role === 'student' ? "Must be exactly 11 digits" : "e.g. LEC-1234"}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition disabled:bg-gray-50"
             />
           </div>
@@ -214,7 +231,7 @@ const Auth = ({ onLogin }) => {
 
         <div className="text-center mt-5 text-sm">
           <button 
-            onClick={() => { setIsLogin(!isLogin); setStatusMsg(null); }}
+            onClick={() => { setIsLogin(!isLogin); setStatusMsg(null); setLevel(''); }}
             className="text-nacosGreen hover:underline font-medium"
           >
             {isLogin ? "Don't have an account? Sign up here" : "Already have an account? Login here"}

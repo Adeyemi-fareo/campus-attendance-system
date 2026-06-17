@@ -55,10 +55,21 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', (req, res) => {
     const { matric_no, password } = req.body;
     db.query(`SELECT * FROM students WHERE matric_no = ?`, [matric_no], async (err, results) => {
+        if (err) return res.status(500).json({ message: "Database lookup failure." });
         if (results.length === 0) return res.status(404).json({ message: "Student not found." });
+        
         const match = await bcrypt.compare(password, results[0].password);
-        if (match) res.status(200).json({ studentData: { matric_no: results[0].matric_no, full_name: results[0].full_name } });
-        else res.status(401).json({ message: "Incorrect PIN." });
+        if (match) {
+            res.status(200).json({ 
+                studentData: { 
+                    matric_no: results[0].matric_no, 
+                    full_name: results[0].full_name,
+                    level: results[0].level // Sent directly to frontend dashboard state memory module
+                } 
+            });
+        } else {
+            res.status(401).json({ message: "Incorrect PIN." });
+        }
     });
 });
 
