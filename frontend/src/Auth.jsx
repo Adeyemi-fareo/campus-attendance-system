@@ -12,6 +12,10 @@ const Auth = ({ onLogin }) => {
   const [statusMsg, setStatusMsg] = useState(null);
   const [accessCode, setAccessCode] = useState(''); 
 
+  // Loading indicator states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isProcessingRecovery, setIsProcessingRecovery] = useState(false);
+
   // Recovery UI Substates
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryType, setRecoveryType] = useState('id'); // 'id' or 'pin'
@@ -40,6 +44,7 @@ const Auth = ({ onLogin }) => {
   const handleRecoverySubmit = async (e) => {
     e.preventDefault();
     setRecoveryStatus(null);
+    setIsProcessingRecovery(true);
 
     try {
       if (recoveryType === 'id') {
@@ -69,25 +74,31 @@ const Auth = ({ onLogin }) => {
       }
     } catch (err) {
       setRecoveryStatus({ type: 'error', text: "Server gateway communication block." });
+    } finally {
+      setIsProcessingRecovery(false);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatusMsg(null);
+    setIsSubmitting(true);
 
     if (!isLogin && role === 'student') {
       if (!level) {
         setStatusMsg({ type: 'error', text: "Please select your academic level before registering." });
+        setIsSubmitting(false);
         return;
       }
       if (identifier.length !== 11) {
         setStatusMsg({ type: 'error', text: "Invalid Matric Number. It must be exactly 11 digits long." });
+        setIsSubmitting(false);
         return;
       }
       const nameWords = fullName.trim().split(/\s+/);
       if (nameWords.length !== 3) {
         setStatusMsg({ type: 'error', text: "Registration Denied: You must enter exactly three names." });
+        setIsSubmitting(false);
         return;
       }
     }
@@ -134,6 +145,8 @@ const Auth = ({ onLogin }) => {
       }
     } catch (error) {
       setStatusMsg({ type: 'error', text: "Failed to connect to the server." });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -198,8 +211,16 @@ const Auth = ({ onLogin }) => {
             </div>
           )}
 
-          <button type="submit" className="w-full bg-nacosGreen text-white font-semibold py-3 rounded-xl hover:bg-opacity-90 transition shadow-md">
-            {isLogin ? `Log In as ${role === 'student' ? 'Student' : 'Lecturer'}` : `Register as ${role === 'student' ? 'Student' : 'Lecturer'}`}
+          <button 
+            type="submit" 
+            disabled={isSubmitting}
+            className="w-full bg-nacosGreen text-white font-semibold py-3 rounded-xl hover:bg-opacity-90 transition shadow-md flex justify-center items-center"
+          >
+            {isSubmitting ? (
+              <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+              isLogin ? `Log In as ${role === 'student' ? 'Student' : 'Lecturer'}` : `Register as ${role === 'student' ? 'Student' : 'Lecturer'}`
+            )}
           </button>
         </form>
 
@@ -211,10 +232,10 @@ const Auth = ({ onLogin }) => {
 
         {/* ACCOUNT RECOVERY INTERFACES OVERLAY MODAL BOX */}
         {showRecoveryModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl relative animate-fade-in">
+          <div className="fixed inset-0 bg-white bg-opacity-90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 relative animate-fade-in">
               <h3 className="text-xl font-bold text-gray-800 mb-2">Account Recovery Panel</h3>
-              <p className="text-xs text-gray-400 mb-4">Select recovery manifest properties targeting active profile arrays.</p>
+              <p className="text-xs text-gray-400 mb-4">Select recovery parameters targeting your active portal profile.</p>
               
               <div className="flex bg-gray-100 p-1 rounded-md mb-4 text-xs font-bold">
                 {role === 'lecturer' && (
@@ -248,7 +269,17 @@ const Auth = ({ onLogin }) => {
 
                 <div className="flex space-x-2 pt-2">
                   <button type="button" onClick={() => setShowRecoveryModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 rounded-lg text-xs transition">Cancel</button>
-                  <button type="submit" className="flex-1 bg-nacosGreen text-white font-bold py-2 rounded-lg text-xs transition shadow-sm">Process Request</button>
+                  <button 
+                    type="submit" 
+                    disabled={isProcessingRecovery}
+                    className="flex-1 bg-nacosGreen text-white font-bold py-2 rounded-lg text-xs transition shadow-sm flex justify-center items-center"
+                  >
+                    {isProcessingRecovery ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      "Process Request"
+                    )}
+                  </button>
                 </div>
               </form>
             </div>
