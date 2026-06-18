@@ -107,6 +107,65 @@ app.post('/api/lecturer/register', async (req, res) => {
     }
 });
 
+
+// ==========================================
+//         CREDENTIAL RECOVERY ENDPOINTS
+// ==========================================
+
+// 1. RECOVER FORGOTTEN STAFF ID BY FULL NAME
+app.post('/api/recovery/forgot-id', (req, res) => {
+    const { full_name } = req.body;
+    if (!full_name) return res.status(400).json({ message: "Full name is required." });
+
+    const query = `SELECT staff_id FROM lecturers WHERE UPPER(full_name) = ?`;
+    db.query(query, [full_name.toUpperCase().trim()], (err, results) => {
+        if (err) return res.status(500).json({ message: "Database lookup failure." });
+        if (results.length === 0) return res.status(404).json({ message: "No registered lecturer profile found matching that name." });
+        
+        res.status(200).json({ staff_id: results[0].staff_id });
+    });
+});
+
+// 2. PASSWORD PIN RECOVERY VIA AUTOMATED GMAIL ROUTE
+app.post('/api/recovery/forgot-pin', (req, res) => {
+    const { role, identifier, email } = req.body; // Expects student matric or lecturer staff ID
+    
+    const table = role === 'student' ? 'students' : 'lecturers';
+    const idColumn = role === 'student' ? 'matric_no' : 'staff_id';
+
+    // Verify the user profile identity exists first
+    db.query(`SELECT full_name, proxy_pin FROM ${table} WHERE ${idColumn} = ?`, [identifier], async (err, results) => {
+        if (err) return res.status(500).json({ message: "Database verification anomaly." });
+        if (results.length === 0) return res.status(404).json({ message: "Identity profile matching those credentials not found." });
+
+        const userRecord = results[0];
+
+        try {
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: process.env.EMAIL_USER, 
+                    pass: process.env.EMAIL_PASS     
+                }
+            });
+
+            const mailOptions = {
+                from: process.env.EMAIL_USER,
+                to: email,
+                subject: `NACOS Portal Security: Account Recovery Pin`,
+                text: `Hello ${userRecord.full_name},\n\nYou requested credential recovery for your NACOS Attendance Portal account.\n\nYour secure 4-Digit Login PIN is: ${userRecord.proxy_pin}\n\nKeep this secure and do not share it with students.\n\nGenerated Securely by Adrian FA's Campus Support Engine.`
+            };
+
+            await transporter.sendMail(mailOptions);
+            res.status(200).json({ message: "Recovery email successfully dispatched!" });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ message: "Mailer module failed to transmit verification arrays." });
+        }
+    });
+});
+
+
 // ==========================================
 //          CORE ATTENDANCE ROUTES
 // ==========================================
@@ -121,11 +180,11 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
 
 const HALL_LOCATIONS = {
     'Coited Room 1': { lat: 6.499406, lng: 3.114119 },
-    'Coited Annex Building': { lat: 6.499334, lng: 3.113444 },
+    'Coited Annex Building': { lat: 6.499338, lng: 3.113442 },
     'Credo Hall': { lat: 6.501398, lng: 3.114351 },
     'ETF Building': { lat: 6.499506, lng: 3.113009 },
-    'Computer Lab 1': { lat: 6.499334, lng: 3.113444 }, 
-    'Computer Lab 2': { lat: 6.499334, lng: 3.113444 }  
+    'Computer Lab 1': { lat: 6.500050, lng: 3.113275 }, 
+    'Computer Lab 2': { lat: 6.499415, lng: 3.113412 }  
 };
 
 app.post('/api/attendance', (req, res) => {
