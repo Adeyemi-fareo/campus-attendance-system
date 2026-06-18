@@ -25,7 +25,7 @@ const Dashboard = ({ user, onLogout }) => {
   // --- ACADEMIC MATRIX SETUP ---
   const coursesByLevel = {
     '100 Level': ['COS121', 'LASUED-CSC121', 'LASUED-CSC122', 'LASUED-CSC123', 'LASUED-CSC124', 'LASUED-CSC125', 'LASUED-CSC126'],
-    '200 Level': ['COS221', 'CSC221', 'IFT211', 'LASUED-CSC222', 'LASUED-CSC223', 'LASUED-CSC224', 'LASUED-CSC225', 'LASUED-CSC226', 'SEN221'] 
+    '200 Level': ['COS221', 'CSC221', 'IFT221', 'LASUED-CSC222', 'LASUED-CSC223', 'LASUED-CSC224', 'LASUED-CSC225', 'LASUED-CSC226', 'SEN221'] 
   };
   const halls = ['Coited Room 1', 'Coited Annex Building', 'Credo Hall', 'ETF Building', 'Computer Lab 1', 'Computer Lab 2'];
 

@@ -18,7 +18,8 @@ const Auth = ({ onLogin }) => {
 
   // Recovery UI Substates
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-  const [recoveryType, setRecoveryType] = useState('id'); // 'id' or 'pin'
+  const [recoveryRole, setRecoveryRole] = useState('student'); // Independent role choice
+  const [recoveryType, setRecoveryType] = useState('pin'); // Default to PIN
   const [recoveryName, setRecoveryName] = useState('');
   const [recoveryId, setRecoveryId] = useState('');
   const [recoveryEmail, setRecoveryEmail] = useState('');
@@ -63,20 +64,18 @@ const Auth = ({ onLogin }) => {
         const res = await fetch(`${apiUrl}/api/recovery/forgot-pin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: role, identifier: recoveryId, email: recoveryEmail })
+          body: JSON.stringify({ recoveryRole, identifier: recoveryId, email: recoveryEmail })
         });
         const data = await res.json();
         if (res.ok) {
-          setRecoveryStatus({ type: 'success', text: `✅ Secret Access PIN dispatched cleanly to ${recoveryEmail}` });
+          setRecoveryStatus({ type: 'success', text: `✅ Account parameters verified. Email dispatched to ${recoveryEmail}` });
         } else {
           setRecoveryStatus({ type: 'error', text: data.message });
         }
       }
     } catch (err) {
       setRecoveryStatus({ type: 'error', text: "Server gateway communication block." });
-    } finally {
-      setIsProcessingRecovery(false);
-    }
+    } window.setTimeout(() => setIsProcessingRecovery(false), 500);
   };
 
   const handleSubmit = async (e) => {
@@ -200,7 +199,7 @@ const Auth = ({ onLogin }) => {
 
           {isLogin && (
             <div className="text-right">
-              <button type="button" onClick={() => { setShowRecoveryModal(true); setRecoveryStatus(null); }} className="text-xs text-nacosGreen hover:underline font-semibold">Forgot ID or Password?</button>
+              <button type="button" onClick={() => { setShowRecoveryModal(true); setRecoveryStatus(null); setRecoveryRole(role); setRecoveryType(role === 'student' ? 'pin' : 'id'); }} className="text-xs text-nacosGreen hover:underline font-semibold">Forgot ID or Password?</button>
             </div>
           )}
 
@@ -232,17 +231,24 @@ const Auth = ({ onLogin }) => {
 
         {/* ACCOUNT RECOVERY INTERFACES OVERLAY MODAL BOX */}
         {showRecoveryModal && (
-          <div className="fixed inset-0 bg-white bg-opacity-90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-md flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 relative animate-fade-in">
-              <h3 className="text-xl font-bold text-gray-800 mb-2">Account Recovery Panel</h3>
+              <h3 className="text-xl font-bold text-gray-800 mb-1">Account Recovery Panel</h3>
               <p className="text-xs text-gray-400 mb-4">Select recovery parameters targeting your active portal profile.</p>
               
-              <div className="flex bg-gray-100 p-1 rounded-md mb-4 text-xs font-bold">
-                {role === 'lecturer' && (
-                  <button type="button" onClick={() => { setRecoveryType('id'); setRecoveryStatus(null); }} className={`flex-1 py-1.5 rounded ${recoveryType === 'id' ? 'bg-white text-nacosGreen shadow' : 'text-gray-500'}`}>Recover Staff ID</button>
-                )}
-                <button type="button" onClick={() => { setRecoveryType('pin'); setRecoveryStatus(null); }} className={`flex-1 py-1.5 rounded ${recoveryType === 'pin' ? 'bg-white text-nacosGreen shadow' : 'text-gray-500'}`}>Recover Login PIN</button>
+              {/* Core Role Selection Row */}
+              <div className="flex bg-gray-100 p-1 rounded-md mb-3 text-xs font-bold">
+                <button type="button" onClick={() => { setRecoveryRole('student'); setRecoveryType('pin'); setRecoveryStatus(null); }} className={`flex-1 py-1 rounded ${recoveryRole === 'student' ? 'bg-white text-nacosGreen shadow' : 'text-gray-500'}`}>Student Profile</button>
+                <button type="button" onClick={() => { setRecoveryRole('lecturer'); setRecoveryStatus(null); }} className={`flex-1 py-1 rounded ${recoveryRole === 'lecturer' ? 'bg-white text-nacosGreen shadow' : 'text-gray-500'}`}>Lecturer Profile</button>
               </div>
+
+              {/* Action Type Selection Row (Only shows for lecturers) */}
+              {recoveryRole === 'lecturer' && (
+                <div className="flex justify-center space-x-4 mb-4 border-b pb-2 text-xs font-semibold">
+                  <button type="button" onClick={() => { setRecoveryType('id'); setRecoveryStatus(null); }} className={`pb-0.5 ${recoveryType === 'id' ? 'text-nacosGreen border-b-2 border-nacosGreen' : 'text-gray-400'}`}>Find Staff ID</button>
+                  <button type="button" onClick={() => { setRecoveryType('pin'); setRecoveryStatus(null); }} className={`pb-0.5 ${recoveryType === 'pin' ? 'text-nacosGreen border-b-2 border-nacosGreen' : 'text-gray-400'}`}>Recover PIN</button>
+                </div>
+              )}
 
               {recoveryStatus && (
                 <div className={`p-2.5 rounded-lg mb-4 text-xs font-bold break-all ${recoveryStatus.type === 'success' ? 'bg-nacosLight text-nacosGreen' : 'bg-red-100 text-red-700'}`}>{recoveryStatus.text}</div>
@@ -257,8 +263,8 @@ const Auth = ({ onLogin }) => {
                 ) : (
                   <>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">{role === 'student' ? 'Confirm Matric Number' : 'Confirm Staff ID Number'}</label>
-                      <input type="text" required value={recoveryId} onChange={(e) => setRecoveryId(e.target.value.toUpperCase())} placeholder={role === 'student' ? "11 Digits Matric" : "e.g. LEC-1234"} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
+                      <label className="block text-xs font-bold text-gray-500 mb-1">{recoveryRole === 'student' ? 'Confirm Matric Number' : 'Confirm Staff ID Number'}</label>
+                      <input type="text" required value={recoveryId} onChange={(e) => setRecoveryId(e.target.value.toUpperCase())} placeholder={recoveryRole === 'student' ? "11 Digits Matric" : "e.g. LEC-1234"} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1">Enter Receiving Email Address</label>

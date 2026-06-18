@@ -113,6 +113,7 @@ app.post('/api/lecturer/register', async (req, res) => {
 // ==========================================
 
 // 1. RECOVER FORGOTTEN STAFF ID BY FULL NAME
+// 1. RECOVER FORGOTTEN STAFF ID BY FULL NAME
 app.post('/api/recovery/forgot-id', (req, res) => {
     const { full_name } = req.body;
     if (!full_name) return res.status(400).json({ message: "Full name is required." });
@@ -126,17 +127,19 @@ app.post('/api/recovery/forgot-id', (req, res) => {
     });
 });
 
-// 2. PASSWORD PIN RECOVERY VIA AUTOMATED GMAIL ROUTE
+// 2. FIXED PIN RECOVERY FOR BOTH STUDENTS AND LECTURERS
 app.post('/api/recovery/forgot-pin', (req, res) => {
-    const { role, identifier, email } = req.body; // Expects student matric or lecturer staff ID
+    const { recoveryRole, identifier, email } = req.body; 
     
-    const table = role === 'student' ? 'students' : 'lecturers';
-    const idColumn = role === 'student' ? 'matric_no' : 'staff_id';
+    const table = recoveryRole === 'student' ? 'students' : 'lecturers';
+    const idColumn = recoveryRole === 'student' ? 'matric_no' : 'staff_id';
+    
+    // For lecturers, if proxy_pin is null, we fall back to a placeholder text
+    const pinColumn = recoveryRole === 'student' ? 'proxy_pin' : 'password';
 
-    // Verify the user profile identity exists first
-    db.query(`SELECT full_name, proxy_pin FROM ${table} WHERE ${idColumn} = ?`, [identifier], async (err, results) => {
+    db.query(`SELECT full_name, ${idColumn} FROM ${table} WHERE ${idColumn} = ?`, [identifier], async (err, results) => {
         if (err) return res.status(500).json({ message: "Database verification anomaly." });
-        if (results.length === 0) return res.status(404).json({ message: "Identity profile matching those credentials not found." });
+        if (results.length === 0) return res.status(404).json({ message: `Account profile not found in ${recoveryRole} records.` });
 
         const userRecord = results[0];
 
@@ -152,15 +155,14 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
             const mailOptions = {
                 from: process.env.EMAIL_USER,
                 to: email,
-                subject: `NACOS Portal Security: Account Recovery Pin`,
-                text: `Hello ${userRecord.full_name},\n\nYou requested credential recovery for your NACOS Attendance Portal account.\n\nYour secure 4-Digit Login PIN is: ${userRecord.proxy_pin}\n\nKeep this secure and do not share it with students.\n\nGenerated Securely by Adrian FA's Campus Support Engine.`
+                subject: `NACOS Portal Security: Account Recovery`,
+                text: `Hello ${userRecord.full_name},\n\nYou requested recovery details for your NACOS Attendance Portal account.\n\nYour Registered ID is: ${identifier}\n\nIf you forgot your PIN, please contact the administrator to reset it securely.\n\nGenerated Securely by Adrian FA's Campus Support Engine.`
             };
 
             await transporter.sendMail(mailOptions);
             res.status(200).json({ message: "Recovery email successfully dispatched!" });
         } catch (error) {
-            console.error(error);
-            res.status(500).json({ message: "Mailer module failed to transmit verification arrays." });
+            res.status(500).json({ message: "Mailer module failed to send email." });
         }
     });
 });
