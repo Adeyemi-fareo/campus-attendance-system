@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2');
@@ -8,39 +9,39 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 
-// --- MIDDLEWARE ---
 app.use(cors({
-    origin: ["http://localhost:5173", "https://nacos-attendance-portal.netlify.app"], // Add your exact Netlify link here
+    origin: ["http://localhost:5173", "https://nacos-attendance-portal.netlify.app"], 
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
 app.use(express.json());
 
-// --- DATABASE CONNECTION ---
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD, 
     database: process.env.DB_NAME,
     port: 25838,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.connect((err) => {
-    if (err) console.error("Database connection failed:", err);
-    else console.log("Connected to MySQL database.");
+db.getConnection((err, connection) => {
+    if (err) {
+        console.error("Database pool connection failed:", err);
+    } else {
+        console.log("Connected to MySQL database via secure Pool.");
+        connection.release(); 
+    }
 });
 
-// ==========================================
-//        AUTHENTICATION ROUTES
-// ==========================================
 
 app.post('/api/register', async (req, res) => {
-    // Added level to req.body destructurer
     const { matric_no, full_name, password, level } = req.body; 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        // Added level variable placement to database insert logic array mapping
         db.query(`INSERT INTO students (matric_no, full_name, password, proxy_pin, level) VALUES (?, ?, ?, ?, ?)`, 
         [matric_no, full_name, hashedPassword, password, level || '200'], (err) => {
             if (err) {
@@ -64,7 +65,7 @@ app.post('/api/login', (req, res) => {
                 studentData: { 
                     matric_no: results[0].matric_no, 
                     full_name: results[0].full_name,
-                    level: results[0].level // Sent directly to frontend dashboard state memory module
+                    level: results[0].level 
                 } 
             });
         } else {
@@ -76,101 +77,207 @@ app.post('/api/login', (req, res) => {
 app.post('/api/lecturer/login', (req, res) => {
     const { staff_id, password } = req.body;
     db.query(`SELECT * FROM lecturers WHERE staff_id = ?`, [staff_id], async (err, results) => {
-        if (results.length === 0) return res.status(404).json({ message: "Lecturer not found." });
-        const match = await bcrypt.compare(password, results[0].password);
-        if (match) res.status(200).json({ lecturerData: { staff_id: results[0].staff_id, full_name: results[0].full_name } });
-        else res.status(401).json({ message: "Incorrect PIN." });
-    });
-});
-
-app.post('/api/lecturer/register', async (req, res) => {
-    const { staff_id, full_name, password, access_code } = req.body;
-
-    // --- THE DEPARTMENT BOUNCER ---
-    const SECRET_PASSCODE = "NACOS-STAFF-2026";
-    if (access_code !== SECRET_PASSCODE) {
-        return res.status(403).json({ message: "Registration Blocked: Invalid Department Access Code." });
-    }
-
-    try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        db.query(`INSERT INTO lecturers (staff_id, full_name, password) VALUES (?, ?, ?)`, 
-        [staff_id, full_name, hashedPassword], (err) => {
-            if (err) {
-                if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ message: "This Staff ID is already registered." });
-                return res.status(500).json({ message: "Database error during registration." });
-            }
-            res.status(201).json({ message: "Registration successful!" });
-        });
-    } catch (error) { 
-        res.status(500).json({ message: "Server error during registration." }); 
-    }
-});
-
-
-// ==========================================
-//         CREDENTIAL RECOVERY ENDPOINTS
-// ==========================================
-
-// 1. RECOVER FORGOTTEN STAFF ID BY FULL NAME
-// 1. RECOVER FORGOTTEN STAFF ID BY FULL NAME
-app.post('/api/recovery/forgot-id', (req, res) => {
-    const { full_name } = req.body;
-    if (!full_name) return res.status(400).json({ message: "Full name is required." });
-
-    const query = `SELECT staff_id FROM lecturers WHERE UPPER(full_name) = ?`;
-    db.query(query, [full_name.toUpperCase().trim()], (err, results) => {
-        if (err) return res.status(500).json({ message: "Database lookup failure." });
-        if (results.length === 0) return res.status(404).json({ message: "No registered lecturer profile found matching that name." });
+        if (err) return res.status(500).json({ message: "Database connection failure." });
+        if (results.length === 0) return res.status(404).json({ message: "Lecturer profile not found." });
         
-        res.status(200).json({ staff_id: results[0].staff_id });
-    });
-});
-
-// 2. FIXED PIN RECOVERY FOR BOTH STUDENTS AND LECTURERS
-app.post('/api/recovery/forgot-pin', (req, res) => {
-    const { recoveryRole, identifier, email } = req.body; 
-    
-    const table = recoveryRole === 'student' ? 'students' : 'lecturers';
-    const idColumn = recoveryRole === 'student' ? 'matric_no' : 'staff_id';
-    
-    // For lecturers, if proxy_pin is null, we fall back to a placeholder text
-    const pinColumn = recoveryRole === 'student' ? 'proxy_pin' : 'password';
-
-    db.query(`SELECT full_name, ${idColumn} FROM ${table} WHERE ${idColumn} = ?`, [identifier], async (err, results) => {
-        if (err) return res.status(500).json({ message: "Database verification anomaly." });
-        if (results.length === 0) return res.status(404).json({ message: `Account profile not found in ${recoveryRole} records.` });
-
-        const userRecord = results[0];
-
-        try {
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER, 
-                    pass: process.env.EMAIL_PASS     
-                }
+        const match = await bcrypt.compare(password, results[0].password);
+        if (match) {
+            res.status(200).json({ 
+                lecturerData: { 
+                    staff_id: results[0].staff_id, 
+                    full_name: results[0].full_name,
+                    email: results[0].email 
+                } 
             });
-
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: email,
-                subject: `NACOS Portal Security: Account Recovery`,
-                text: `Hello ${userRecord.full_name},\n\nYou requested recovery details for your NACOS Attendance Portal account.\n\nYour Registered ID is: ${identifier}\n\nIf you forgot your PIN, please contact the administrator to reset it securely.\n\nGenerated Securely by Adrian FA's Campus Support Engine.`
-            };
-
-            await transporter.sendMail(mailOptions);
-            res.status(200).json({ message: "Recovery email successfully dispatched!" });
-        } catch (error) {
-            res.status(500).json({ message: "Mailer module failed to send email." });
+        } else {
+            res.status(401).json({ message: "Incorrect login PIN." });
         }
     });
 });
 
+app.post('/api/lecturer/register', async (req, res) => {
+    const { staff_id, full_name, password, email } = req.body;
+    
+    if (!staff_id || !full_name || !password || !email) {
+        return res.status(400).json({ message: "All registration fields (including email) are required." });
+    }
 
-// ==========================================
-//          CORE ATTENDANCE ROUTES
-// ==========================================
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.query(`INSERT INTO lecturers (staff_id, full_name, password, email) VALUES (?, ?, ?, ?)`, 
+        [staff_id, full_name, hashedPassword, email], (err) => {
+            if (err) {
+                if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ message: "This Staff ID or Email is already registered." });
+                return res.status(500).json({ message: "Database registration failure." });
+            }
+            
+            res.status(201).json({ 
+                message: "Registration successful!",
+                lecturerData: {
+                    staff_id,
+                    full_name,
+                    email
+                }
+            });
+        });
+    } catch (error) { res.status(500).json({ message: "Server registry execution block." }); }
+});
+
+
+app.post('/api/recovery/forgot-id', (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email address is required." });
+
+    const query = `SELECT staff_id, email FROM lecturers WHERE email = ?`;
+    db.query(query, [email.trim()], (err, results) => {
+        if (err) return res.status(500).json({ message: "Database lookup failure." });
+        if (results.length === 0) return res.status(404).json({ message: "No registered lecturer profile found matching that email." });
+        
+        const targetEmail = results[0].email;
+        const [namePart, domainPart] = targetEmail.split('@');
+        const maskedEmail = `${namePart.substring(0, 2)}${'*'.repeat(Math.max(namePart.length - 2, 4))}@${domainPart}`;
+
+        res.status(200).json({ 
+            staff_id: results[0].staff_id,
+            masked_email: maskedEmail
+        });
+    });
+});
+
+app.post('/api/recovery/forgot-pin', (req, res) => {
+    const { role, identifier, email } = req.body; 
+    
+    if (!role || !identifier) {
+        return res.status(400).json({ message: "Missing required profile data." });
+    }
+
+    const table = role === 'student' ? 'students' : 'lecturers';
+    const idColumn = role === 'student' ? 'matric_no' : 'staff_id';
+    
+    const selectQuery = role === 'lecturer' 
+        ? `SELECT full_name, email FROM lecturers WHERE staff_id = ?` 
+        : `SELECT full_name FROM students WHERE matric_no = ?`;
+
+    db.query(selectQuery, [identifier], async (err, results) => {
+        if (err) return res.status(500).json({ message: "Database verification anomaly." });
+        if (results.length === 0) return res.status(404).json({ message: `Account profile not found.` });
+
+        const userRecord = results[0];
+        
+        const targetEmail = role === 'lecturer' ? userRecord.email : email;
+
+        if (!targetEmail) {
+            return res.status(400).json({ message: "No valid email address is associated with this profile." });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 300000);
+        db.query(`INSERT INTO password_resets (email, token, role, expires_at) VALUES (?, ?, ?, ?)`, 
+        [targetEmail, token, role, expiresAt], async (insertErr) => {
+            if (insertErr) return res.status(500).json({ message: "Failed to generate security token." });
+
+            try {
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: {
+                        user: process.env.EMAIL_USER, 
+                        pass: process.env.EMAIL_PASS     
+                    }
+                });
+
+                const frontendUrl = process.env.NODE_ENV === 'production' 
+                    ? 'https://nacos-attendance-portal.netlify.app' 
+                    : 'http://localhost:5173';
+
+                const resetLink = `${frontendUrl}/?token=${token}&email=${targetEmail}`;                
+                const mailOptions = {
+                    from: process.env.EMAIL_USER,
+                    to: targetEmail,
+                    subject: `NACOS Portal Security: Password Reset Link`,
+                    html: `
+                        <p>Hello ${userRecord.full_name},</p>
+                        <p>You requested a password reset for your NACOS Attendance Portal account.</p>
+                        <p>Please click the secure link below to set a new PIN:</p>
+                        <p><a href="${resetLink}" style="background-color: #008751; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset My Portal PIN</a></p>
+                        <p>This link is secure will expire in 5 minutes.</p>
+                        <hr/>
+                        <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
+                    `
+                };
+
+                await transporter.sendMail(mailOptions);
+                
+                let displayEmail = targetEmail;
+                if (role === 'lecturer') {
+                    const [namePart, domainPart] = targetEmail.split('@');
+                    displayEmail = `${namePart.substring(0, 2)}${'*'.repeat(Math.max(namePart.length - 2, 4))}@${domainPart}`;
+                }
+
+                res.status(200).json({ message: `A password reset link has been sent to ${displayEmail}` });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Mailer module failed to transmit verification token." });
+            }
+        });
+    });
+});
+
+app.post('/api/recovery/confirm-reset', (req, res) => {
+    const { token, email, password } = req.body;
+
+    db.query(`SELECT * FROM password_resets WHERE email = ? AND token = ? AND expires_at > CURRENT_TIMESTAMP`, 
+    [email, token], async (err, results) => {
+        if (err || results.length === 0) return res.status(400).json({ message: "Invalid or expired recovery security token string." });
+
+        const targetRole = results[0].role;
+        const table = targetRole === 'student' ? 'students' : 'lecturers';
+        
+        const targetQuery = targetRole === 'student' 
+            ? `UPDATE students SET password = ? WHERE matric_no = (SELECT identifier_placeholder_logic FROM accounts_temp_map)` 
+            : `UPDATE lecturers SET password = ? WHERE email = ?`;
+
+        const queryParams = targetRole === 'student' ? [await bcrypt.hash(password, 10)] : [await bcrypt.hash(password, 10), email];
+
+        try {
+            db.query(targetQuery, queryParams, (updateErr) => {
+                if (updateErr) return res.status(500).json({ message: "Failed to update profile password hash arrays." });
+                
+                db.query(`DELETE FROM password_resets WHERE email = ?`, [email]);
+                
+                try {
+                    const transporter = nodemailer.createTransport({
+                        service: 'gmail',
+                        auth: {
+                            user: process.env.EMAIL_USER, 
+                            pass: process.env.EMAIL_PASS     
+                        }
+                    });
+
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: email,
+                        subject: `NACOS Portal Security: Password Successfully Changed`,
+                        html: `
+                            <p>Hello,</p>
+                            <p>This is a confirmation that the 4-Digit PIN for your NACOS Attendance Portal account has been successfully updated.</p>
+                            <p>If you did not make this change, please contact the system administrator immediately.</p>
+                            <hr/>
+                            <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
+                        `
+                    };
+
+                    transporter.sendMail(mailOptions); 
+                } catch (mailErr) {
+                    console.error("Failed to send confirmation email:", mailErr);
+                }
+
+                res.status(200).json({ message: "Password updated successfully!" });
+            });
+        } catch(hashErr) { res.status(500).json({ message: "Crypto packaging failure." }); }
+    });
+});
+
+
 
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
     const R = 6371e3; 
@@ -181,12 +288,12 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
 }
 
 const HALL_LOCATIONS = {
-    'Coited Room 1': { lat: 6.499406, lng: 3.114119 },
-    'Coited Annex Building': { lat: 6.499338, lng: 3.113442 },
-    'Credo Hall': { lat: 6.501398, lng: 3.114351 },
-    'ETF Building': { lat: 6.499506, lng: 3.113009 },
-    'Computer Lab 1': { lat: 6.500050, lng: 3.113275 }, 
-    'Computer Lab 2': { lat: 6.499415, lng: 3.113412 }  
+    'Coited Room 1': { lat: 6.499369, lng: 3.114115 },
+    'Coited Annex Building': { lat: 6.499385, lng: 3.113401 },
+    'Credo Hall': { lat: 6.501393, lng: 3.114341 },
+    'ETF Building': { lat: 6.499503, lng: 3.113986 },
+    'Software Lab 1': { lat: 6.499419, lng: 3.113306 },
+    'Software Lab 2': { lat: 6.499327, lng: 3.113288 }
 };
 
 app.post('/api/attendance', (req, res) => {
@@ -197,8 +304,7 @@ app.post('/api/attendance', (req, res) => {
     
     const distance = getDistanceInMeters(targetLocation.lat, targetLocation.lng, lat, lng);
     
-    // --- PRODUCTION MODE: 50 Meter Radius ---
-    if (distance > 50) {
+    if (distance > 75) {
         return res.status(403).json({ 
             message: `Location verification failed. You are ${Math.round(distance)}m away from the hall.` 
         }); 
@@ -228,28 +334,37 @@ app.get('/api/attendance/count', (req, res) => {
 
 app.post('/api/attendance/export', (req, res) => {
     const { course, email } = req.body;
+    
+    // REMOVED 'CURDATE()' SO IT EXPORTS THE ENTIRE SEMESTER'S HISTORY FOR THIS COURSE
     const query = `
         SELECT a.matric_no, s.full_name, a.scan_time, a.level
         FROM attendance_records a 
         JOIN students s ON a.matric_no = s.matric_no 
-        WHERE a.course_code = ? AND DATE(a.scan_time) = CURDATE()
+        WHERE a.course_code = ?
+        ORDER BY a.scan_time DESC
     `;
 
     db.query(query, [course], async (err, results) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        if (results.length === 0) return res.status(404).json({ message: "No attendance records found for today." });
+        if (results.length === 0) return res.status(404).json({ message: "No attendance records found for this course." });
 
         try {
-            const formattedData = results.map(row => ({
-                "Matric Number": row.matric_no,
-                "Student Name": row.full_name,
-                "Level": row.level,
-                "Time of Sign-in": new Date(row.scan_time).toLocaleString('en-NG')
-            }));
+            // FORMAT THE DATA FOR EXCEL
+            const formattedData = results.map(row => {
+                const dateObj = new Date(row.scan_time);
+                return {
+                    "Matric Number": row.matric_no,
+                    "Student Name": row.full_name,
+                    "Level": row.level,
+                    // Splits Date and Time into readable formats for the Lecturer
+                    "Date": dateObj.toLocaleDateString('en-NG'),
+                    "Time of Sign-in": dateObj.toLocaleTimeString('en-NG')
+                };
+            });
 
             const worksheet = xlsx.utils.json_to_sheet(formattedData);
             const workbook = xlsx.utils.book_new();
-            xlsx.utils.book_append_sheet(workbook, worksheet, "Attendance");
+            xlsx.utils.book_append_sheet(workbook, worksheet, "Full Attendance History");
             const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
             const transporter = nodemailer.createTransport({
@@ -263,9 +378,9 @@ app.post('/api/attendance/export', (req, res) => {
             const mailOptions = {
                 from: process.env.EMAIL_USER,
                 to: email,
-                subject: `NACOS Attendance Report: ${course}`,
-                text: `Hello Lecturer,\n\nAttached is the automated Excel attendance record for ${course}.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
-                attachments: [{ filename: `${course}_Attendance.xlsx`, content: excelBuffer }]
+                subject: `NACOS Complete Attendance Report: ${course}`,
+                text: `Hello,\n\nAttached is the complete automated Excel attendance record for all ${course} sessions.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
+                attachments: [{ filename: `${course}_Full_Attendance.xlsx`, content: excelBuffer }]
             };
 
             await transporter.sendMail(mailOptions);
@@ -277,11 +392,6 @@ app.post('/api/attendance/export', (req, res) => {
     });
 });
 
-// ==========================================
-//     PERSISTENT CLASS LOGGING ROUTES
-// ==========================================
-
-// 1. START A CLASS LAYER
 app.post('/api/classes/start', (req, res) => {
     const { lecturer_id, course_code, level, hall_name } = req.body;
     const query = `INSERT INTO classes (lecturer_id, course_code, level, hall_name) VALUES (?, ?, ?, ?)`;
@@ -292,7 +402,6 @@ app.post('/api/classes/start', (req, res) => {
     });
 });
 
-// 2. END A CLASS LAYER
 app.post('/api/classes/end', (req, res) => {
     const { classId } = req.body;
     const query = `UPDATE classes SET end_time = CURRENT_TIMESTAMP WHERE id = ?`;
@@ -303,7 +412,6 @@ app.post('/api/classes/end', (req, res) => {
     });
 });
 
-// 3. UPGRADED LECTURER HISTORY ROUTE (Reads from classes, drops in attendance counts)
 app.get('/api/lecturer/history', (req, res) => {
     const { staff_id } = req.query;
     const query = `
@@ -332,22 +440,5 @@ app.get('/api/lecturer/history', (req, res) => {
     });
 });
 
-
-// ==========================================
-//         ACCOUNT RECOVERY ROUTE
-// ==========================================
-
-app.post('/api/recovery/forgot-id', (sqlReq, sqlRes) => {
-    const { full_name } = sqlReq.body;
-    // Standard validation search mechanism mapping against upper string bounds
-    db.query(`SELECT staff_id FROM lecturers WHERE UPPER(full_name) = ?`, [full_name.toUpperCase().trim()], (err, results) => {
-        if (err) return sqlRes.status(500).json({ message: "Database validation lookup anomaly." });
-        if (results.length === 0) return sqlRes.status(404).json({ message: "Lecturer profile identity not found inside database registries." });
-        
-        sqlRes.status(200).json({ staff_id: results[0].staff_id });
-    });
-});
-
-// --- START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

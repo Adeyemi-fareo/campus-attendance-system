@@ -4,19 +4,17 @@ const Auth = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState('student'); 
   
-  // Input Form State Memory
   const [identifier, setIdentifier] = useState(''); 
   const [fullName, setFullName] = useState('');
   const [pin, setPin] = useState('');
   const [level, setLevel] = useState(''); 
   const [statusMsg, setStatusMsg] = useState(null);
   const [accessCode, setAccessCode] = useState(''); 
+  const [lecturerEmailRegister, setLecturerEmailRegister] = useState(''); 
 
-  // Loading indicator states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessingRecovery, setIsProcessingRecovery] = useState(false);
 
-  // Recovery UI Substates
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryType, setRecoveryType] = useState('id'); // 'id' or 'pin'
   const [recoveryName, setRecoveryName] = useState('');
@@ -57,11 +55,11 @@ const Auth = ({ onLogin }) => {
         const res = await fetch(`${apiUrl}/api/recovery/forgot-id`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ full_name: recoveryName })
+          body: JSON.stringify({ email: recoveryEmail }) 
         });
         const data = await res.json();
         if (res.ok) {
-          setRecoveryStatus({ type: 'success', text: `Verification Success! Found Staff ID: ${data.staff_id}` });
+          setRecoveryStatus({ type: 'success', text: `Verification Success! Found Staff ID: ${data.staff_id} (Linked to ${data.masked_email})` });
         } else {
           setRecoveryStatus({ type: 'error', text: data.message });
         }
@@ -73,7 +71,7 @@ const Auth = ({ onLogin }) => {
         });
         const data = await res.json();
         if (res.ok) {
-          setRecoveryStatus({ type: 'success', text: `✅ Secret Access PIN dispatched cleanly to ${recoveryEmail}` });
+          setRecoveryStatus({ type: 'success', text: `✅ ${data.message}` });
         } else {
           setRecoveryStatus({ type: 'error', text: data.message });
         }
@@ -123,7 +121,11 @@ const Auth = ({ onLogin }) => {
         password: pin,
         level: level 
       };
-      if (role === 'lecturer') payload.access_code = accessCode; 
+      
+      if (role === 'lecturer') {
+        payload.access_code = accessCode; 
+        payload.email = lecturerEmailRegister; 
+      }
     }
 
     try {
@@ -141,6 +143,7 @@ const Auth = ({ onLogin }) => {
           setPin('');
           setAccessCode(''); 
           setLevel('');
+          setLecturerEmailRegister('');
           setStatusMsg({ type: 'success', text: `Registration successful! Please log in below. Your ID is: ${identifier}` });
         } else {
           const userData = role === 'student' ? data.studentData : data.lecturerData;
@@ -178,7 +181,7 @@ const Auth = ({ onLogin }) => {
           {!isLogin && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{role === 'student' ? 'Full Name' : 'Title & Full Name'}</label>
-              <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value.toUpperCase())} placeholder={role === 'student' ? "SURNAME FIRSTNAME MIDDLENAME" : "e.g. DR. JOHN DOE"} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition" />
+              <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value.toUpperCase())} placeholder={role === 'student' ? "SURNAME FIRSTNAME OTHER" : "e.g. DR. JOHN DOE ROBERT"} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition" />
               <p className="text-xs text-gray-400 mt-1">Must include all three names strictly.</p>
             </div>
           )}
@@ -203,6 +206,20 @@ const Auth = ({ onLogin }) => {
             <label className="block text-sm font-medium text-gray-700 mb-1">4-Digit PIN</label>
             <input type="password" maxLength={4} required value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} placeholder="••••" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen text-center tracking-widest outline-none transition" />
           </div>
+
+          {!isLogin && role === 'lecturer' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Official Email Address</label>
+              <input 
+                type="email" 
+                required
+                value={lecturerEmailRegister}
+                onChange={(e) => setLecturerEmailRegister(e.target.value)}
+                placeholder="e.g. lecturer@lasued.edu.ng"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none transition"
+              />
+            </div>
+          )}
 
           {isLogin && (
             <div className="text-right">
@@ -236,14 +253,13 @@ const Auth = ({ onLogin }) => {
           </button>
         </div>
 
-        {/* RECOVERY MODAL WITH WHITE BACKGROUND AND DISCRETE SWITCHES */}
+        {}
         {showRecoveryModal && (
           <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-md flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 relative animate-fade-in">
               <h3 className="text-xl font-bold text-gray-800 mb-2">Account Recovery Panel</h3>
               <p className="text-xs text-gray-400 mb-4">Select recovery profile parameters targeting active registries.</p>
               
-              {/* Dynamic role triggers fixing the profile matching bug */}
               <div className="flex bg-gray-100 p-1 rounded-md mb-4 text-xs font-bold">
                 <button 
                   type="button" 
@@ -275,8 +291,8 @@ const Auth = ({ onLogin }) => {
               <form onSubmit={handleRecoverySubmit} className="space-y-4">
                 {recoveryType === 'id' && role === 'lecturer' ? (
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">Enter Registered Full Name</label>
-                    <input type="text" required value={recoveryName} onChange={(e) => setRecoveryName(e.target.value)} placeholder="SURNAME FIRSTNAME MIDDLENAME" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen uppercase" />
+                    <label className="block text-xs font-bold text-gray-500 mb-1">Enter Registered Email Address</label>
+                    <input type="email" required value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} placeholder="e.g. lecturer@lasued.edu.ng" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
                   </div>
                 ) : (
                   <>
@@ -284,10 +300,13 @@ const Auth = ({ onLogin }) => {
                       <label className="block text-xs font-bold text-gray-500 mb-1">{role === 'student' ? 'Confirm Matric Number' : 'Confirm Staff ID Number'}</label>
                       <input type="text" required value={recoveryId} onChange={(e) => setRecoveryId(e.target.value.toUpperCase())} placeholder={role === 'student' ? "11 Digits Matric" : "e.g. LEC-1234"} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 mb-1">Enter Receiving Email Address</label>
-                      <input type="email" required value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} placeholder="e.g. user@gmail.com" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
-                    </div>
+                    {}
+                    {role === 'student' && (
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Enter Receiving Email Address</label>
+                        <input type="email" required value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} placeholder="e.g. user@gmail.com" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-nacosGreen" />
+                      </div>
+                    )}
                   </>
                 )}
 

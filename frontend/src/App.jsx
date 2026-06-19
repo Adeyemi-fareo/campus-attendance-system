@@ -1,19 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Auth from './Auth';
 import Dashboard from './Dashboard';
+import ResetPassword from './ResetPassword'; 
 
 function App() {
-  // If this is null, the user is not logged in.
-  // If it contains data (like their name and role), they are logged in.
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
+  const [resetParams, setResetParams] = useState(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const email = params.get('email');
+    if (token && email) {
+      setResetParams({ token, email });
+    }
+  }, []);
+
+  const handleLogout = () => {
+    setUser(null);
+  };
+
+  if (resetParams) {
+    return (
+      <ResetPassword 
+        token={resetParams.token} 
+        email={resetParams.email} 
+        onComplete={() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setResetParams(null);
+        }}
+      />
+    );
+  }
 
   return (
-    <div>
-      {/* The Traffic Cop Logic: */}
-      {currentUser ? (
-        <Dashboard user={currentUser} onLogout={() => setCurrentUser(null)} />
+    <div className="App">
+      {!user ? (
+        <Auth onLogin={(userData) => setUser(userData)} />
       ) : (
-        <Auth onLogin={(userData) => setCurrentUser(userData)} />
+        <Dashboard user={user} onLogout={handleLogout} />
       )}
     </div>
   );

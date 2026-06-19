@@ -1,11 +1,9 @@
 @import "tailwindcss";
 
-/* Define your custom NACOS brand colors here */
 @theme {
   --color-nacosGreen: #047857;
 }
 
-/* Add a soft gray background to the entire app */
 body {
   background-color: #F9FAFB;
 }

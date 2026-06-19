@@ -3,38 +3,33 @@ import QRCode from 'react-qr-code';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const Dashboard = ({ user, onLogout }) => {
-  // --- LECTURER STATE ---
   const [activeTab, setActiveTab] = useState('session'); 
   const [selectedLevel, setSelectedLevel] = useState('');
   const [selectedCourse, setSelectedCourse] = useState('');
   const [selectedHall, setSelectedHall] = useState('');
-  const [activeQR, setActiveQR] = useState(null);
-  
+  const [activeQR, setActiveQR] = useState(null); 
   const [sessionSummary, setSessionSummary] = useState(null);
-  const [lecturerEmail, setLecturerEmail] = useState('');
+  
+  const [lecturerEmail, setLecturerEmail] = useState(user?.email || '');  
   const [recentEmails, setRecentEmails] = useState([]); 
-  const [isEmailing, setIsEmailing] = useState(false);
+  const [isEmailing, setIsEmailing] = useState(false); 
   
   const [historyData, setHistoryData] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // --- STUDENT STATE ---
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState(null);
 
-  // --- ACADEMIC MATRIX SETUP ---
   const coursesByLevel = {
     '100 Level': ['COS121', 'LASUED-CSC121', 'LASUED-CSC122', 'LASUED-CSC123', 'LASUED-CSC124', 'LASUED-CSC125', 'LASUED-CSC126'],
-    '200 Level': ['COS221', 'CSC221', 'IFT221', 'LASUED-CSC222', 'LASUED-CSC223', 'LASUED-CSC224', 'LASUED-CSC225', 'LASUED-CSC226', 'SEN221'] 
+    '200 Level': ['COS221', 'CSC221', 'IFT211', 'LASUED-CSC222', 'LASUED-CSC223', 'LASUED-CSC224', 'LASUED-CSC225', 'LASUED-CSC226', 'SEN221'] 
   };
-  const halls = ['Coited Room 1', 'Coited Annex Building', 'Credo Hall', 'ETF Building', 'Computer Lab 1', 'Computer Lab 2'];
+  const halls = ['Coited Room 1', 'Coited Annex Building', 'Credo Hall', 'ETF Building', 'Software Lab 1', 'Software Lab 2'];
 
-  // --- CLOUD API URL ---
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-  // --- REQ 3 & REQ 1: PERSISTENCE & DYNAMIC SELECTION LOADING ---
   useEffect(() => {
-    if (user.role === 'lecturer') {
+    if (user?.role === 'lecturer') {
       const savedSession = localStorage.getItem(`nacos_session_${user.staff_id}`);
       if (savedSession) {
         const parsed = JSON.parse(savedSession);
@@ -46,16 +41,14 @@ const Dashboard = ({ user, onLogout }) => {
       const savedEmails = JSON.parse(localStorage.getItem(`nacos_emails_${user.staff_id}`)) || [];
       setRecentEmails(savedEmails);
     }
-  }, [user.role, user.staff_id]);
+  }, [user?.role, user?.staff_id]);
 
-  // --- LECTURER OPERATIONS ---
   const handleGenerateQR = async (e) => {
     e.preventDefault();
     const startTime = new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
     
     let liveClassId = null;
     try {
-      // Log the start of the class session tracking row instantly on database
       const logResponse = await fetch(`${apiUrl}/api/classes/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,7 +85,6 @@ const Dashboard = ({ user, onLogout }) => {
     const sessionData = JSON.parse(localStorage.getItem(`nacos_session_${user.staff_id}`)) || {};
     const endTime = new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 
-    // Terminate persistent log row trace on backend data arrays
     if (sessionData.classId) {
       try {
         await fetch(`${apiUrl}/api/classes/end`, {
@@ -172,9 +164,8 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  // --- STUDENT SCANNER PROCESSING LOGIC ---
   useEffect(() => {
-    if (user.role === 'student' && isScanning) {
+    if (user?.role === 'student' && isScanning) {
       const scanner = new Html5QrcodeScanner("nacos-qr-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
 
       scanner.render(
@@ -195,7 +186,7 @@ const Dashboard = ({ user, onLogout }) => {
                     body: JSON.stringify({
                       matric_no: user.matric_no,
                       course: qrData.course,
-                      level: user.level || qrData.level, // REQ 1: Fallback constraint matching system schema
+                      level: user.level || qrData.level, 
                       hall: qrData.hall,
                       lecturer_id: qrData.lecturer_id, 
                       lat: latitude,
@@ -229,20 +220,19 @@ const Dashboard = ({ user, onLogout }) => {
         scanner.clear().catch(e => console.log("Scanner engine detached."));
       };
     }
-  }, [isScanning, user.role, user.matric_no, user.level, apiUrl]);
+  }, [isScanning, user?.role, user?.matric_no, user?.level, apiUrl]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 flex flex-col">
       <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6 border border-gray-100 w-full flex-grow">
         
-        {/* Top Management Navbar Layout */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-nacosGreen">Welcome, {user.full_name}</h1>
+            <h1 className="text-2xl font-bold text-nacosGreen">Welcome, {user?.full_name || 'User'}</h1>
             <p className="text-gray-500 font-medium mt-1">
-              {user.role === 'student' 
-                ? `Matric No: ${user.matric_no} • (${user.level || '200'} Level)` 
-                : `Staff ID: ${user.staff_id}`}
+              {user?.role === 'student' 
+                ? `Matric No: ${user?.matric_no} • (${user?.level || '200'} Level)` 
+                : `Staff ID: ${user?.staff_id || 'N/A'}`}
             </p>
           </div>
           <button onClick={onLogout} className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg font-semibold transition">
@@ -252,8 +242,7 @@ const Dashboard = ({ user, onLogout }) => {
 
         <div className="py-4">
           
-          {/* LECTURER USER CONTAINER PROFILE */}
-          {user.role === 'lecturer' && (
+          {user?.role === 'lecturer' && (
             <div className="max-w-xl mx-auto">
               
               <div className="flex space-x-4 mb-8 border-b">
@@ -267,38 +256,37 @@ const Dashboard = ({ user, onLogout }) => {
                   onClick={fetchHistory}
                   className={`pb-2 font-bold transition-colors ${activeTab === 'history' ? 'text-nacosGreen border-b-2 border-nacosGreen' : 'text-gray-400 hover:text-gray-600'}`}
                 >
-                  Historical Log Matrix
+                  Class History
                 </button>
               </div>
 
-              {/* MODULE FRAMEWORK: LIVE SYNC SESSION INTERFACE */}
               {activeTab === 'session' && (
                 <>
                   {!activeQR && !sessionSummary && (
                     <form onSubmit={handleGenerateQR} className="space-y-4 animate-fade-in">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Active Class Target Level</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Class Level</label>
                         <select required value={selectedLevel} onChange={(e) => { setSelectedLevel(e.target.value); setSelectedCourse(''); }} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none bg-white">
                           <option value="" disabled>-- Select Level --</option>
                           {Object.keys(coursesByLevel).map(level => <option key={level} value={level}>{level}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Semester Curriculum Course Block</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Semester Curriculum Course</label>
                         <select required value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)} disabled={!selectedLevel} className={`w-full px-4 py-2 border border-gray-300 rounded-lg outline-none bg-white transition ${!selectedLevel ? 'opacity-50 cursor-not-allowed bg-gray-100' : 'focus:ring-2 focus:ring-nacosGreen'}`}>
-                          <option value="" disabled>{!selectedLevel ? '-- Select Target Level Matrix First --' : '-- Choose Course --'}</option>
+                          <option value="" disabled>{!selectedLevel ? '-- Select Academic Level --' : '-- Choose Course --'}</option>
                           {selectedLevel && coursesByLevel[selectedLevel].map(course => <option key={course} value={course}>{course}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Lecture Facility Allocation Hall</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Preferred Lecture Hall</label>
                         <select required value={selectedHall} onChange={(e) => setSelectedHall(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nacosGreen outline-none bg-white">
                           <option value="" disabled>-- Select Lecture Hall --</option>
                           {halls.map(hall => <option key={hall} value={hall}>{hall}</option>)}
                         </select>
                       </div>
                       <button type="submit" className="w-full bg-nacosGreen hover:bg-green-800 text-white font-semibold py-3 rounded-lg shadow-md transition duration-200 mt-4">
-                        Generate Secure Token Matrix Array (QR Code)
+                        Start Scanner (QR Code)
                       </button>
                     </form>
                   )}
@@ -313,17 +301,16 @@ const Dashboard = ({ user, onLogout }) => {
                       <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full mb-6">Session Active Across Devices</span>
                       
                       <button onClick={handleEndSession} className="bg-red-50 text-red-600 font-semibold py-2 px-6 rounded-lg hover:bg-red-100 transition">
-                        Terminate System Registration & Close Matrix Window
+                        Terminate Class Session & Close Window
                       </button>
                     </div>
                   )}
 
                   {sessionSummary && (
                     <div className="bg-white p-8 rounded-xl shadow-lg border-2 border-nacosGreen text-center animate-fade-in">
-                      <h3 className="text-2xl font-bold text-gray-800 mb-1">Course Window Terminated</h3>
+                      <h3 className="text-2xl font-bold text-gray-800 mb-1">Class Session Terminated</h3>
                       <p className="text-gray-500 font-medium mb-4">{sessionSummary.course} • {sessionSummary.hall}</p>
                       
-                      {/* REQ 4: Time indicators display layout */}
                       <div className="flex justify-center space-x-4 mb-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
                         <div>Started: <span className="text-gray-700">{sessionSummary.startedAt}</span></div>
                         <div>Closed: <span className="text-gray-700">{sessionSummary.endedAt}</span></div>
@@ -335,7 +322,7 @@ const Dashboard = ({ user, onLogout }) => {
                       </div>
                       
                       <form onSubmit={(e) => handleEmailReport(e)} className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 text-left mb-1">Enter Active Mail Target Hub</label>
+                        <label className="block text-sm font-medium text-gray-700 text-left mb-1">Enter Active Email Address</label>
                         <input 
                           type="email" 
                           required
@@ -362,14 +349,13 @@ const Dashboard = ({ user, onLogout }) => {
                 </>
               )}
 
-              {/* MODULE FRAMEWORK: HISTORICAL RECORDS MATRIX LIST VIEW */}
               {activeTab === 'history' && (
                 <div className="animate-fade-in">
                   {isLoadingHistory ? (
                     <p className="text-center text-gray-500 py-10">Syncing with remote database clusters...</p>
                   ) : historyData.length === 0 ? (
                     <div className="text-center py-10 bg-gray-50 rounded-xl border border-gray-200">
-                      <p className="text-gray-500 font-medium">No system matrix validation entries identified.</p>
+                      <p className="text-gray-500 font-medium">No class history found.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -378,8 +364,7 @@ const Dashboard = ({ user, onLogout }) => {
                           <div>
                             <h4 className="text-lg font-bold text-gray-800">{session.course_code}</h4>
                             <p className="text-sm text-gray-500">{session.class_date} • {session.hall_name} • {session.level}</p>
-                            {/* REQ 4: Gracefully handle structural timeline metrics on table list maps */}
-                            <p className="text-xs text-gray-400 font-medium mt-1">Timeline logs linked directly via student scan logs.</p>
+                            <p className="text-xs text-gray-400 font-medium mt-1">Attendance recorded via student QR scans</p>
                           </div>
                           <div className="text-right">
                             <p className="text-2xl font-black text-nacosGreen">{session.total_students}</p>
@@ -389,7 +374,7 @@ const Dashboard = ({ user, onLogout }) => {
                       ))}
                       
                       <div className="mt-8 pt-6 border-t border-gray-200">
-                         <h4 className="text-sm font-bold text-gray-700 mb-2">Request Historical Document Manifest Array</h4>
+                         <h4 className="text-sm font-bold text-gray-700 mb-2">Receiving Email</h4>
                          <div className="flex space-x-2">
                            <input 
                               type="email" 
@@ -402,13 +387,13 @@ const Dashboard = ({ user, onLogout }) => {
                             />
                            <button 
                               onClick={() => {
-                                const course = prompt("Identify precision course matrix key code target (e.g., CSC221):");
+                                const course = prompt("Enter the Course Code (e.g., CSC221):");
                                 if (course && lecturerEmail) handleEmailReport(null, course.toUpperCase());
                               }}
                               disabled={!lecturerEmail || isEmailing}
                               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition text-sm disabled:opacity-50"
                             >
-                              Dispatch Manifest
+                              Send Report
                             </button>
                          </div>
                       </div>
@@ -419,8 +404,7 @@ const Dashboard = ({ user, onLogout }) => {
             </div>
           )}
 
-          {/* STUDENT DATA CONTROL INTERFACE SCREEN */}
-          {user.role === 'student' && (
+          {user?.role === 'student' && (
             <div className="max-w-md mx-auto text-center">
               <h2 className="text-2xl font-bold text-gray-800 mb-6">Biometric Spatial Scanning Portal</h2>
               {scanMessage && (
@@ -450,9 +434,8 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
       </div>
       
-      {/* Footer System Branding Node Component */}
       <div className="text-center mt-8 text-xs font-bold text-gray-400 tracking-widest uppercase pb-4">
-        Powered by FAREO ADEYEMI (Adrian FA) • NACOS Standard Movement
+        Powered by FAREO ADEYEMI (Adrian FA) • NACOS Project
       </div>
     </div>
   );
