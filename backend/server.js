@@ -137,7 +137,6 @@ app.post('/api/recovery/forgot-id', (req, res) => {
     });
 });
 
-// --- UPDATED: FORGOT PIN API VIA BREVO HTTP ---
 app.post('/api/recovery/forgot-pin', (req, res) => {
     const { role, identifier, email } = req.body; 
     
@@ -182,7 +181,7 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
                         'content-type': 'application/json'
                     },
                     body: JSON.stringify({
-                        sender: { name: "NACOS Portal Support", email: "support@lasued.edu.ng" },
+                        sender: { name: "NACOS Portal Support", email: "fareosocials@gmail.com" },
                         to: [{ email: targetEmail }],
                         subject: "NACOS Portal Security: Password Reset Link",
                         htmlContent: `
@@ -214,7 +213,6 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
     });
 });
 
-// --- UPDATED: CONFIRM RESET API VIA BREVO HTTP ---
 app.post('/api/recovery/confirm-reset', (req, res) => {
     const { token, email, password } = req.body;
 
@@ -319,7 +317,6 @@ app.get('/api/attendance/count', (req, res) => {
     });
 });
 
-// --- UPDATED: ATTENDANCE EXCEL EXPORT VIA BREVO HTTP ---
 app.post('/api/attendance/export', (req, res) => {
     const { course, email } = req.body;
     
