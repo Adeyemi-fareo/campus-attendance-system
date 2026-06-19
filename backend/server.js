@@ -178,10 +178,15 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
 
             try {
                 const transporter = nodemailer.createTransport({
-                    service: 'gmail',
+                    host: 'smtp.gmail.com',
+                     port: 465,
+                    secure: true, // Use SSL/TLS directly for port 465
                     auth: {
-                        user: process.env.EMAIL_USER, 
-                        pass: process.env.EMAIL_PASS     
+                        user: process.env.EMAIL_USER?.trim(), 
+                        pass: process.env.EMAIL_PASS?.trim()     
+                    },
+                    tls: {
+                        rejectUnauthorized: false // Prevents hosting platforms from rejecting self-signed certificates
                     }
                 });
 
