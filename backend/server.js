@@ -5,7 +5,6 @@ const cors = require('cors');
 const mysql = require('mysql2');
 const bcrypt = require('bcrypt');
 const xlsx = require('xlsx');
-const nodemailer = require('nodemailer');
 
 const app = express();
 
@@ -36,7 +35,6 @@ db.getConnection((err, connection) => {
         connection.release(); 
     }
 });
-
 
 app.post('/api/register', async (req, res) => {
     const { matric_no, full_name, password, level } = req.body; 
@@ -113,16 +111,11 @@ app.post('/api/lecturer/register', async (req, res) => {
             
             res.status(201).json({ 
                 message: "Registration successful!",
-                lecturerData: {
-                    staff_id,
-                    full_name,
-                    email
-                }
+                lecturerData: { staff_id, full_name, email }
             });
         });
     } catch (error) { res.status(500).json({ message: "Server registry execution block." }); }
 });
-
 
 app.post('/api/recovery/forgot-id', (req, res) => {
     const { email } = req.body;
@@ -144,6 +137,7 @@ app.post('/api/recovery/forgot-id', (req, res) => {
     });
 });
 
+// --- UPDATED: FORGOT PIN API VIA BREVO HTTP ---
 app.post('/api/recovery/forgot-pin', (req, res) => {
     const { role, identifier, email } = req.body; 
     
@@ -151,9 +145,6 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
         return res.status(400).json({ message: "Missing required profile data." });
     }
 
-    const table = role === 'student' ? 'students' : 'lecturers';
-    const idColumn = role === 'student' ? 'matric_no' : 'staff_id';
-    
     const selectQuery = role === 'lecturer' 
         ? `SELECT full_name, email FROM lecturers WHERE staff_id = ?` 
         : `SELECT full_name FROM students WHERE matric_no = ?`;
@@ -163,7 +154,6 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
         if (results.length === 0) return res.status(404).json({ message: `Account profile not found.` });
 
         const userRecord = results[0];
-        
         const targetEmail = role === 'lecturer' ? userRecord.email : email;
 
         if (!targetEmail) {
@@ -172,45 +162,42 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 300000);
+
         db.query(`INSERT INTO password_resets (email, token, role, expires_at) VALUES (?, ?, ?, ?)`, 
         [targetEmail, token, role, expiresAt], async (insertErr) => {
             if (insertErr) return res.status(500).json({ message: "Failed to generate security token." });
 
             try {
-                const transporter = nodemailer.createTransport({
-                    host: 'smtp.gmail.com',
-                     port: 465,
-                    secure: true, // Use SSL/TLS directly for port 465
-                    auth: {
-                        user: process.env.EMAIL_USER?.trim(), 
-                        pass: process.env.EMAIL_PASS?.trim()     
-                    },
-                    tls: {
-                        rejectUnauthorized: false // Prevents hosting platforms from rejecting self-signed certificates
-                    }
-                });
-
                 const frontendUrl = process.env.NODE_ENV === 'production' 
                     ? 'https://nacos-attendance-portal.netlify.app' 
                     : 'http://localhost:5173';
 
-                const resetLink = `${frontendUrl}/?token=${token}&email=${targetEmail}`;                
-                const mailOptions = {
-                    from: process.env.EMAIL_USER,
-                    to: targetEmail,
-                    subject: `NACOS Portal Security: Password Reset Link`,
-                    html: `
-                        <p>Hello ${userRecord.full_name},</p>
-                        <p>You requested a password reset for your NACOS Attendance Portal account.</p>
-                        <p>Please click the secure link below to set a new PIN:</p>
-                        <p><a href="${resetLink}" style="background-color: #008751; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset My Portal PIN</a></p>
-                        <p>This link is secure will expire in 5 minutes.</p>
-                        <hr/>
-                        <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
-                    `
-                };
+                const resetLink = `${frontendUrl}/?token=${token}&email=${targetEmail}`;
 
-                await transporter.sendMail(mailOptions);
+                const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                    method: 'POST',
+                    headers: {
+                        'accept': 'application/json',
+                        'api-key': process.env.BREVO_API_KEY,
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sender: { name: "NACOS Portal Support", email: "support@lasued.edu.ng" },
+                        to: [{ email: targetEmail }],
+                        subject: "NACOS Portal Security: Password Reset Link",
+                        htmlContent: `
+                            <p>Hello ${userRecord.full_name},</p>
+                            <p>You requested a password reset for your NACOS Attendance Portal account.</p>
+                            <p>Please click the secure link below to set a new PIN:</p>
+                            <p><a href="${resetLink}" style="background-color: #008751; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset My Portal PIN</a></p>
+                            <p>This link is secure and will expire in 5 minutes.</p>
+                            <hr/>
+                            <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
+                        `
+                    })
+                });
+
+                if (!response.ok) throw new Error("Brevo HTTP API delivery failure");
                 
                 let displayEmail = targetEmail;
                 if (role === 'lecturer') {
@@ -220,13 +207,14 @@ app.post('/api/recovery/forgot-pin', (req, res) => {
 
                 res.status(200).json({ message: `A password reset link has been sent to ${displayEmail}` });
             } catch (error) {
-                console.error(error);
+                console.error("Mailer Error:", error);
                 res.status(500).json({ message: "Mailer module failed to transmit verification token." });
             }
         });
     });
 });
 
+// --- UPDATED: CONFIRM RESET API VIA BREVO HTTP ---
 app.post('/api/recovery/confirm-reset', (req, res) => {
     const { token, email, password } = req.body;
 
@@ -235,8 +223,6 @@ app.post('/api/recovery/confirm-reset', (req, res) => {
         if (err || results.length === 0) return res.status(400).json({ message: "Invalid or expired recovery security token string." });
 
         const targetRole = results[0].role;
-        const table = targetRole === 'student' ? 'students' : 'lecturers';
-        
         const targetQuery = targetRole === 'student' 
             ? `UPDATE students SET password = ? WHERE matric_no = (SELECT identifier_placeholder_logic FROM accounts_temp_map)` 
             : `UPDATE lecturers SET password = ? WHERE email = ?`;
@@ -244,34 +230,32 @@ app.post('/api/recovery/confirm-reset', (req, res) => {
         const queryParams = targetRole === 'student' ? [await bcrypt.hash(password, 10)] : [await bcrypt.hash(password, 10), email];
 
         try {
-            db.query(targetQuery, queryParams, (updateErr) => {
+            db.query(targetQuery, queryParams, async (updateErr) => {
                 if (updateErr) return res.status(500).json({ message: "Failed to update profile password hash arrays." });
                 
                 db.query(`DELETE FROM password_resets WHERE email = ?`, [email]);
                 
                 try {
-                    const transporter = nodemailer.createTransport({
-                        service: 'gmail',
-                        auth: {
-                            user: process.env.EMAIL_USER, 
-                            pass: process.env.EMAIL_PASS     
-                        }
+                    await fetch('https://api.brevo.com/v3/smtp/email', {
+                        method: 'POST',
+                        headers: {
+                            'accept': 'application/json',
+                            'api-key': process.env.BREVO_API_KEY,
+                            'content-type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sender: { name: "NACOS Portal Support", email: "support@lasued.edu.ng" },
+                            to: [{ email: email }],
+                            subject: "NACOS Portal Security: Password Successfully Changed",
+                            htmlContent: `
+                                <p>Hello,</p>
+                                <p>This is a confirmation that the 4-Digit PIN for your NACOS Attendance Portal account has been successfully updated.</p>
+                                <p>If you did not make this change, please contact the system administrator immediately.</p>
+                                <hr/>
+                                <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
+                            `
+                        })
                     });
-
-                    const mailOptions = {
-                        from: process.env.EMAIL_USER,
-                        to: email,
-                        subject: `NACOS Portal Security: Password Successfully Changed`,
-                        html: `
-                            <p>Hello,</p>
-                            <p>This is a confirmation that the 4-Digit PIN for your NACOS Attendance Portal account has been successfully updated.</p>
-                            <p>If you did not make this change, please contact the system administrator immediately.</p>
-                            <hr/>
-                            <p>Generated Securely by Adrian FA's Campus Support Engine.</p>
-                        `
-                    };
-
-                    transporter.sendMail(mailOptions); 
                 } catch (mailErr) {
                     console.error("Failed to send confirmation email:", mailErr);
                 }
@@ -281,8 +265,6 @@ app.post('/api/recovery/confirm-reset', (req, res) => {
         } catch(hashErr) { res.status(500).json({ message: "Crypto packaging failure." }); }
     });
 });
-
-
 
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
     const R = 6371e3; 
@@ -337,10 +319,10 @@ app.get('/api/attendance/count', (req, res) => {
     });
 });
 
+// --- UPDATED: ATTENDANCE EXCEL EXPORT VIA BREVO HTTP ---
 app.post('/api/attendance/export', (req, res) => {
     const { course, email } = req.body;
     
-    // REMOVED 'CURDATE()' SO IT EXPORTS THE ENTIRE SEMESTER'S HISTORY FOR THIS COURSE
     const query = `
         SELECT a.matric_no, s.full_name, a.scan_time, a.level
         FROM attendance_records a 
@@ -354,14 +336,12 @@ app.post('/api/attendance/export', (req, res) => {
         if (results.length === 0) return res.status(404).json({ message: "No attendance records found for this course." });
 
         try {
-            // FORMAT THE DATA FOR EXCEL
             const formattedData = results.map(row => {
                 const dateObj = new Date(row.scan_time);
                 return {
                     "Matric Number": row.matric_no,
                     "Student Name": row.full_name,
                     "Level": row.level,
-                    // Splits Date and Time into readable formats for the Lecturer
                     "Date": dateObj.toLocaleDateString('en-NG'),
                     "Time of Sign-in": dateObj.toLocaleTimeString('en-NG')
                 };
@@ -371,27 +351,31 @@ app.post('/api/attendance/export', (req, res) => {
             const workbook = xlsx.utils.book_new();
             xlsx.utils.book_append_sheet(workbook, worksheet, "Full Attendance History");
             const excelBuffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+            const base64Content = excelBuffer.toString('base64');
 
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER, 
-                    pass: process.env.EMAIL_PASS     
-                }
+            const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'api-key': process.env.BREVO_API_KEY,
+                    'content-type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender: { name: "NACOS Attendance Support", email: "support@lasued.edu.ng" },
+                    to: [{ email: email }],
+                    subject: `NACOS Complete Attendance Report: ${course}`,
+                    textContent: `Hello,\n\nAttached is the complete automated Excel attendance record for all ${course} sessions.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
+                    attachment: [{
+                        name: `${course}_Full_Attendance.xlsx`,
+                        content: base64Content
+                    }]
+                })
             });
 
-            const mailOptions = {
-                from: process.env.EMAIL_USER,
-                to: email,
-                subject: `NACOS Complete Attendance Report: ${course}`,
-                text: `Hello,\n\nAttached is the complete automated Excel attendance record for all ${course} sessions.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
-                attachments: [{ filename: `${course}_Full_Attendance.xlsx`, content: excelBuffer }]
-            };
-
-            await transporter.sendMail(mailOptions);
+            if (!response.ok) throw new Error("Brevo export delivery failure");
             res.status(200).json({ message: "Excel report sent successfully!" });
         } catch (error) {
-            console.error(error);
+            console.error("Export Error:", error);
             res.status(500).json({ message: "Failed to generate or send email." });
         }
     });
