@@ -223,7 +223,11 @@ const Auth = ({ onLogin }) => {
 
           {isLogin && (
             <div className="text-right">
-              <button type="button" onClick={() => { setShowRecoveryModal(true); setRecoveryStatus(null); }} className="text-xs text-nacosGreen hover:underline font-semibold">Forgot ID or Password?</button>
+              <button type="button" onClick={() => { 
+                setShowRecoveryModal(true); 
+                setRecoveryStatus(null); 
+                setRecoveryType(role === 'lecturer' ? 'id' : 'pin'); // Forces the system memory to match the user role
+              }} className="text-xs text-nacosGreen hover:underline font-semibold">Forgot ID or Password?</button>
             </div>
           )}
 
@@ -270,7 +274,7 @@ const Auth = ({ onLogin }) => {
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => { setRole('lecturer'); setRecoveryStatus(null); }} 
+                  onClick={() => { setRole('lecturer'); setRecoveryType('id'); setRecoveryStatus(null); }} 
                   className={`flex-1 py-1.5 rounded transition ${role === 'lecturer' ? 'bg-white text-nacosGreen shadow' : 'text-gray-500'}`}
                 >
                   Lecturer Profile
