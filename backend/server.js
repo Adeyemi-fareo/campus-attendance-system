@@ -242,7 +242,7 @@ app.post('/api/recovery/confirm-reset', (req, res) => {
                             'content-type': 'application/json'
                         },
                         body: JSON.stringify({
-                            sender: { name: "NACOS Portal Support", email: "support@lasued.edu.ng" },
+                            sender: { name: "NACOS Portal Support", email: "fareosocials@gmail.com" },
                             to: [{ email: email }],
                             subject: "NACOS Portal Security: Password Successfully Changed",
                             htmlContent: `
@@ -358,7 +358,7 @@ app.post('/api/attendance/export', (req, res) => {
                     'content-type': 'application/json'
                 },
                 body: JSON.stringify({
-                    sender: { name: "NACOS Attendance Support", email: "support@lasued.edu.ng" },
+                    sender: { name: "NACOS Attendance Support", email: "fareosocials@gmail.com" },
                     to: [{ email: email }],
                     subject: `NACOS Complete Attendance Report: ${course}`,
                     textContent: `Hello,\n\nAttached is the complete automated Excel attendance record for all ${course} sessions.\n\nGenerated securely by Adrian FA's Campus Attendance System.`,
